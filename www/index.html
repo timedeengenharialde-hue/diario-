@@ -83,6 +83,7 @@ td.n{text-align:right;white-space:nowrap}
 
 <script>
 const KEY = 'diario-sintomas.v1';
+const CAPN = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
 const H = 3600000, D = 86400000;
 const GRUPOS = [
   ['Bem', [['tranquilo','Tranquilo'],['focado','Focado'],['disposto','Disposto']]],
@@ -102,7 +103,7 @@ function load(){
   try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && s.entries){ s.lemb = s.lemb || { rit:[], esc:[] }; return s; } } catch(e) {}
   return { entries:[], doses:[], lastDose:{ rit:'', esc:'10 mg' }, lemb:{ rit:[], esc:[] } };
 }
-function save(){ try { localStorage.setItem(KEY, JSON.stringify(S)); } catch(e) {} }
+function save(){ try { localStorage.setItem(KEY, JSON.stringify(S)); } catch(e) {} syncWidget(); }
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fmt = t => new Date(t).toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
@@ -299,16 +300,20 @@ function catSVG(mood){
     angry:`<path d="M30 38 L44 43 M70 38 L56 43" stroke="${O}" stroke-width="2.8" stroke-linecap="round"/><circle cx="39" cy="48" r="3.4" fill="${O}"/><circle cx="61" cy="48" r="3.4" fill="${O}"/><path d="M72 22 l6 6 M78 22 l-6 6" stroke="#d63b31" stroke-width="2.4" stroke-linecap="round"/>`,
     sleep:`<path d="M33 48 h10 M57 48 h10" stroke="${O}" stroke-width="2.6" stroke-linecap="round"/><text x="76" y="24" font-size="12" font-weight="700" fill="#5b6b8a">z</text><text x="84" y="16" font-size="9" font-weight="700" fill="#5b6b8a">z</text>`,
     sad:`<path d="M32 42 L44 39 M68 42 L56 39" stroke="${O}" stroke-width="2.4" stroke-linecap="round"/><circle cx="39" cy="48" r="3.4" fill="${O}"/><circle cx="61" cy="48" r="3.4" fill="${O}"/><path d="M36 53 q-2 5 0 7 q2 -2 0 -7z" fill="#6fa8dc"/>`,
-    neutral:`<circle cx="39" cy="47" r="3.6" fill="${O}"/><circle cx="61" cy="47" r="3.6" fill="${O}"/>`
+    neutral:`<circle cx="39" cy="47" r="3.6" fill="${O}"/><circle cx="61" cy="47" r="3.6" fill="${O}"/>`,
+    remedio:`<circle cx="38" cy="46" r="4.6" fill="${O}"/><circle cx="62" cy="46" r="4.6" fill="${O}"/><circle cx="39.6" cy="44.4" r="1.5" fill="#fff"/><circle cx="63.6" cy="44.4" r="1.5" fill="#fff"/><text x="80" y="30" font-size="18" font-weight="800" fill="#d63b31">!</text>`
   }[mood];
-  const mouth = mood === 'angry' || mood === 'sad' ? `<path d="M45 59 q5 -4 10 0" fill="none" stroke="${O}" stroke-width="2" stroke-linecap="round"/>`
+  const prop = mood === 'remedio'
+    ? `<g transform="rotate(-20 51 80)"><rect x="37" y="74" width="28" height="12" rx="6" fill="#fff" stroke="${O}" stroke-width="1.6"/><path d="M51 74 h8 a6 6 0 0 1 0 12 h-8 z" fill="#d63b31" stroke="${O}" stroke-width="1.6"/></g>`
+    : `<g transform="rotate(-8 51 82)"><rect x="40" y="73" width="23" height="17" rx="2" fill="#dfe6ee" stroke="${O}" stroke-width="1.6"/>
+      <path d="M44 78 h14 M44 82 h10 M44 86 h12" stroke="#8a97a8" stroke-width="1.3"/></g>`;
+  const mouth = mood === 'remedio' ? `<ellipse cx="50" cy="58" rx="3" ry="3.5" fill="${O}"/>` : mood === 'angry' || mood === 'sad' ? `<path d="M45 59 q5 -4 10 0" fill="none" stroke="${O}" stroke-width="2" stroke-linecap="round"/>`
     : mood === 'neutral' ? `<path d="M46 57 h8" stroke="${O}" stroke-width="2" stroke-linecap="round"/>`
     : `<path d="M45 56 q2.5 3 5 0 q2.5 3 5 0" fill="none" stroke="${O}" stroke-width="1.9" stroke-linecap="round"/>`;
   return `<svg viewBox="0 0 100 100" aria-hidden="true">
     <ellipse cx="50" cy="85" rx="27" ry="14" fill="${W}" stroke="${O}" stroke-width="2"/>
     <path d="M74 86 q14 -2 12 -16" fill="none" stroke="${OR}" stroke-width="5" stroke-linecap="round"/>
-    <g transform="rotate(-8 51 82)"><rect x="40" y="73" width="23" height="17" rx="2" fill="#dfe6ee" stroke="${O}" stroke-width="1.6"/>
-      <path d="M44 78 h14 M44 82 h10 M44 86 h12" stroke="#8a97a8" stroke-width="1.3"/></g>
+    ${prop}
     <ellipse cx="40" cy="80" rx="6" ry="4.5" fill="${W}" stroke="${O}" stroke-width="1.6"/>
     <ellipse cx="63" cy="77" rx="6" ry="4.5" fill="${W}" stroke="${O}" stroke-width="1.6"/>
     <path d="M23 35 L27 8 L46 24 Z" fill="${OR}" stroke="${O}" stroke-width="2" stroke-linejoin="round"/>
@@ -322,10 +327,30 @@ function catSVG(mood){
   </svg>`;
 }
 const ha = ms => ms < H ? Math.max(1, Math.round(ms/60000)) + ' min' : hs(ms);
+function remedioPendente(){
+  const t = Date.now();
+  for (const k of ['rit','esc']) for (const h of S.lemb[k]){
+    const [hh, mm] = h.split(':').map(Number);
+    for (const d of [-1, 0]){
+      const r = new Date(); r.setDate(r.getDate() + d); r.setHours(hh, mm, 0, 0);
+      const ld = lastDoseBefore(k, t);
+      if (t >= r && t < +r + 3*H && (!ld || ld.t < +r - 90*60000)) return k;
+    }
+  }
+  return null;
+}
+const GW = CAPN ? window.Capacitor.registerPlugin('GatoWidget') : null;
+function syncWidget(){
+  if (!GW) return;
+  const h = humorAtual(), t = Date.now();
+  const last = { rit:(lastDoseBefore('rit', t) || {}).t || 0, esc:(lastDoseBefore('esc', t) || {}).t || 0 };
+  GW.update({ state: JSON.stringify({ lemb:S.lemb, last, mood:h.mood, moodT:h.e ? h.e.t : 0, frase:h.e ? FRASE[h.mood] : '' }) }).catch(() => {});
+}
 function renderTop(){
   const h = humorAtual(), t = Date.now();
-  $('cat').innerHTML = catSVG(h.mood);
-  $('bubble').textContent = h.e ? FRASE[h.mood] + ' (' + NOME[h.k] + ' ' + h.n + ', há ' + ha(t - h.e.t) + ')' : 'Como você está agora? Marque abaixo.';
+  const pr = remedioPendente();
+  $('cat').innerHTML = catSVG(pr ? 'remedio' : h.mood);
+  $('bubble').textContent = pr ? 'Hora de tomar ' + MEDS[pr] + '! Toque em "Tomei agora".' : h.e ? FRASE[h.mood] + ' (' + NOME[h.k] + ' ' + h.n + ', há ' + ha(t - h.e.t) + ')' : 'Como você está agora? Marque abaixo.';
   $('pills').innerHTML = ['rit','esc'].map(k => { const d = lastDoseBefore(k, t);
     return `<span>${MEDS[k]}: <b>${d ? 'há ' + ha(t - d.t) : '—'}</b></span>`; }).join('');
 }
@@ -389,6 +414,7 @@ document.addEventListener('click', async e => {
   else if (d.deld && confirm('Excluir esta dose?')){ S.doses = S.doses.filter(x => x.id !== d.deld); save(); render(); }
 });
 render();
+syncWidget();
 if (LN){
   LN.addListener('localNotificationActionPerformed', a => { const m = a.notification.extra && a.notification.extra.med; if (m){ tab = 'hoje'; render(); abrirDose(m); } });
   agendarLembretes();
